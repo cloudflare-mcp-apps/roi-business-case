@@ -1,4 +1,4 @@
-import { StrictMode, useState, useMemo, useCallback, useEffect } from 'react';
+import { StrictMode, useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App, PostMessageTransport, applyDocumentTheme } from '@modelcontextprotocol/ext-apps';
 import type { McpUiHostContext } from '@modelcontextprotocol/ext-apps';
@@ -195,6 +195,77 @@ function paybackColor(months: number): string {
   return 'text-red-600 dark:text-red-400';
 }
 
+function profitColor(profit: number): string {
+  if (profit > 0) return 'text-green-600 dark:text-green-400';
+  if (profit === 0) return 'text-yellow-600 dark:text-yellow-400';
+  return 'text-red-600 dark:text-red-400';
+}
+
+function generateBusinessCaseText(inputs: BusinessCaseInputs, metrics: BusinessCaseMetrics): string {
+  const problemLines = inputs.problems.map(p => {
+    const tag = p.source === "client" ? "(dane klienta)" : "(szacunek)";
+    return `  - ${p.name}: ${formatPLN(p.annualCost)} / rok ${tag}`;
+  }).join('\n');
+  const effectLines = inputs.effects.map(e =>
+    `  - ${e.name}: ${formatPLN(e.annualValue)} / rok`
+  ).join('\n');
+  const alternativeLine = inputs.alternative
+    ? `\nAlternatywa: ${inputs.alternative.name} — ${formatPLN(inputs.alternative.annualCost)} / rok`
+    : '';
+  const paybackStr = metrics.paybackMonths === Infinity ? 'brak zwrotu' : `${metrics.paybackMonths} mies.`;
+  return `BUSINESS CASE — ${inputs.clientName}${inputs.industry ? ` (${inputs.industry})` : ''}
+
+ZIDENTYFIKOWANE PROBLEMY:
+${problemLines}
+Laczny koszt problemow: ${formatPLN(metrics.totalProblemCost)} / rok
+
+PROPONOWANE ROZWIAZANIE: ${inputs.solution.name}
+  Koszt jednorazowy: ${formatPLN(inputs.solution.oneTimeCost)}
+  Koszt roczny: ${formatPLN(metrics.solutionOngoingCost)}
+  Koszt 1. roku: ${formatPLN(metrics.solutionFirstYearCost)}
+
+OCZEKIWANE EFEKTY:
+${effectLines}
+Laczna wartosc efektow: ${formatPLN(metrics.totalEffectValue)} / rok
+
+ANALIZA ROI:
+  ROI: ${metrics.roiPercent.toFixed(0)}%
+  Okres zwrotu: ${paybackStr}
+  Zysk roczny: ${formatPLN(metrics.annualProfit)}
+  Koszt braku zmiany (12 mies.): ${formatPLN(metrics.costOfInaction12m)}${alternativeLine}`;
+}
+
+// Break-even vertical line plugin for Chart.js
+const breakEvenPlugin = {
+  id: 'breakEvenLine',
+  afterDraw(chart: any) {
+    const opts = chart.options.plugins?.breakEvenLine;
+    const payback = opts?.paybackMonth;
+    if (!payback || payback > 12 || payback === Infinity) return;
+
+    const { ctx, scales, chartArea } = chart;
+    const xScale = scales.x;
+    const xPos = xScale.getPixelForValue(payback - 1);
+    const isDarkMode = opts?.isDark;
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.setLineDash([5, 5]);
+    ctx.strokeStyle = isDarkMode ? 'rgba(250,204,21,0.7)' : 'rgba(202,138,4,0.7)';
+    ctx.lineWidth = 2;
+    ctx.moveTo(xPos, chartArea.top);
+    ctx.lineTo(xPos, chartArea.bottom);
+    ctx.stroke();
+
+    ctx.setLineDash([]);
+    ctx.fillStyle = isDarkMode ? '#fbbf24' : '#ca8a04';
+    ctx.font = '10px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(`Zwrot: ${payback} mies.`, xPos, chartArea.top - 4);
+    ctx.restore();
+  }
+};
+
 // ============================================================================
 // Main Widget
 // ============================================================================
@@ -207,8 +278,35 @@ function Widget() {
   const [errorMsg, setErrorMsg] = useState<string>('');
   const [liveInputs, setLiveInputs] = useState<BusinessCaseInputs | null>(null);
   const [sliderRanges, setSliderRanges] = useState<SliderRanges | null>(null);
+  const [showText, setShowText] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const appRef = useRef<App | null>(null);
 
   const liveMetrics = useMemo(() => liveInputs ? calculateMetrics(liveInputs) : null, [liveInputs]);
+
+  // Keep appRef in sync
+  useEffect(() => { appRef.current = app; }, [app]);
+
+  // Debounced model context update after slider changes
+  useEffect(() => {
+    if (!liveInputs || !liveMetrics || !appRef.current) return;
+    const timer = setTimeout(() => {
+      appRef.current?.updateModelContext({
+        content: [{
+          type: "text",
+          text: `---
+client: ${liveInputs.clientName}
+roi: ${liveMetrics.roiPercent.toFixed(0)}%
+payback: ${liveMetrics.paybackMonths === Infinity ? 'N/A' : liveMetrics.paybackMonths + ' months'}
+annual-profit: ${liveMetrics.annualProfit} PLN
+cost-of-inaction: ${liveMetrics.costOfInaction12m} PLN/yr
+---
+User adjusted sliders. Current ROI is ${liveMetrics.roiPercent.toFixed(0)}%, payback ${liveMetrics.paybackMonths === Infinity ? 'N/A' : liveMetrics.paybackMonths + ' months'}, annual profit ${formatPLN(liveMetrics.annualProfit)}.`
+        }]
+      });
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [liveInputs, liveMetrics]);
 
   const updateProblemCost = useCallback((idx: number, value: number) => {
     setLiveInputs(prev => {
@@ -452,7 +550,7 @@ function Widget() {
           </div>
 
           {/* Metric Cards */}
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <MetricCard
               label="ROI"
               value={`${liveMetrics.roiPercent.toFixed(0)}%`}
@@ -462,6 +560,11 @@ function Widget() {
               label="Okres zwrotu"
               value={paybackStr}
               colorClass={paybackColor(liveMetrics.paybackMonths)}
+            />
+            <MetricCard
+              label="Zysk roczny"
+              value={formatPLN(liveMetrics.annualProfit)}
+              colorClass={profitColor(liveMetrics.annualProfit)}
             />
             <MetricCard
               label="Koszt braku zmiany"
@@ -547,11 +650,13 @@ function Widget() {
             <div className="h-48">
               <Line
                 data={projectionData}
+                plugins={[breakEvenPlugin]}
                 options={{
                   responsive: true,
                   maintainAspectRatio: false,
                   interaction: { mode: 'index', intersect: false },
                   plugins: {
+                    breakEvenLine: { paybackMonth: liveMetrics.paybackMonths, isDark } as any,
                     legend: { position: 'top', labels: { color: textColor, boxWidth: 12, padding: 8, font: { size: 11 } } },
                     tooltip: {
                       callbacks: { label: (ctx) => `${ctx.dataset.label}: ${formatPLN(ctx.parsed.y ?? 0)}` },
@@ -591,6 +696,34 @@ function Widget() {
                 }}
               />
             </div>
+          </div>
+
+          {/* Business Case Text */}
+          <div className="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-3">
+            <button
+              onClick={() => setShowText(!showText)}
+              className="w-full flex items-center justify-between text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide"
+            >
+              <span>Tekst Business Case</span>
+              <span className="text-xs font-normal">{showText ? '\u25B2' : '\u25BC'}</span>
+            </button>
+            {showText && (
+              <div className="mt-2">
+                <pre className="text-xs text-gray-700 dark:text-gray-300 whitespace-pre-wrap font-mono bg-white dark:bg-gray-900 rounded p-3 max-h-48 overflow-y-auto">
+                  {generateBusinessCaseText(liveInputs, liveMetrics)}
+                </pre>
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(generateBusinessCaseText(liveInputs, liveMetrics));
+                    setCopied(true);
+                    setTimeout(() => setCopied(false), 2000);
+                  }}
+                  className="mt-2 px-3 py-1 text-xs rounded bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 hover:bg-blue-200 dark:hover:bg-blue-800"
+                >
+                  {copied ? 'Skopiowano!' : 'Kopiuj tekst'}
+                </button>
+              </div>
+            )}
           </div>
 
         </div>

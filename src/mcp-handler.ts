@@ -94,7 +94,7 @@ function validateAndExecuteTool(
   toolName: string,
   args: unknown,
 ): { result?: ReturnType<typeof executeBusinessCase>; error?: { code: number; message: string } } {
-  if (toolName !== "build_business_case" && toolName !== "recalculate_roi") {
+  if (toolName !== "build_business_case") {
     return { error: { code: -32602, message: `Unknown tool: ${toolName}` } };
   }
 
@@ -225,29 +225,6 @@ export function getOrCreateServer(
     async (params) => executeBusinessCase(params as BuildBusinessCaseParams)
   );
 
-  // Tool 2: recalculate_roi (app-only, hidden from model)
-  server.registerTool(
-    "recalculate_roi",
-    {
-      title: "Recalculate ROI",
-      description: "Recalculates ROI metrics when user adjusts sliders in the widget",
-      inputSchema: BuildBusinessCaseInput,
-      _meta: {
-        ui: {
-          resourceUri: widgetResource.uri,
-          visibility: ["app"],
-        }
-      },
-    },
-    async (params) => {
-      const result = calculateBusinessCase(params as BuildBusinessCaseParams);
-      return {
-        content: [{ type: "text" as const, text: "Recalculated" }],
-        structuredContent: result as unknown as Record<string, unknown>,
-      };
-    }
-  );
-
   // Prompt 1: business-case
   server.registerPrompt(
     "business-case",
@@ -368,18 +345,6 @@ function handleToolsList(request: { id: number | string }): Response {
         inputSchema: TOOL_JSON_SCHEMAS.build_business_case,
         _meta: {
           ui: { resourceUri: widgetResource.uri }
-        },
-      },
-      {
-        name: "recalculate_roi",
-        title: "Recalculate ROI",
-        description: "Recalculates ROI metrics when user adjusts sliders in the widget",
-        inputSchema: TOOL_JSON_SCHEMAS.build_business_case,
-        _meta: {
-          ui: {
-            resourceUri: widgetResource.uri,
-            visibility: ["app"],
-          }
         },
       },
     ],
