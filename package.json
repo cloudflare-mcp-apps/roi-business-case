@@ -1,0 +1,53 @@
+{
+  "name": "roi-business-case",
+  "version": "1.0.0",
+  "description": "Interactive ROI Business Case Builder with dynamic sliders and charts for B2B sales",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wtyczki-ai/roi-business-case.git"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "cloudflare-workers",
+    "mcp-apps",
+    "roi-calculator"
+  ],
+  "scripts": {
+    "dev": "wrangler dev",
+    "dev:widget": "cross-env INPUT=widgets/widget.html vite build --watch",
+    "build": "cross-env INPUT=widgets/widget.html vite build",
+    "build:widgets": "npm run build",
+    "deploy": "npm run build:widgets && wrangler deploy",
+    "type-check": "tsc --noEmit",
+    "serve:http": "wrangler dev --port 3000",
+    "serve:stdio": "wrangler dev --experimental-enable-local-persistence"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/ext-apps": "^1.0.0",
+    "@modelcontextprotocol/sdk": "^1.26.0",
+    "chart.js": "^4.5.1",
+    "jose": "^6.1.0",
+    "react": "^18.3.1",
+    "react-chartjs-2": "^5.3.1",
+    "react-dom": "^18.3.1",
+    "zod": "^4.1.13"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250101.0",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^5.1.2",
+    "autoprefixer": "^10.4.20",
+    "cross-env": "^10.1.0",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.0",
+    "vite-plugin-singlefile": "^2.3.0",
+    "wrangler": "^4.45.3"
+  }
+}
