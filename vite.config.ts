@@ -19,6 +19,7 @@ export default defineConfig({
     },
   },
   build: {
+    assetsInlineLimit: 100_000,  // Inline images up to 100KB as base64 (viteSingleFile needs this)
     sourcemap: isDevelopment ? "inline" : undefined,
     cssMinify: !isDevelopment,
     minify: !isDevelopment,

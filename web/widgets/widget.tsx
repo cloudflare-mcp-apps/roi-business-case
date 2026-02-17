@@ -1,4 +1,4 @@
-import { StrictMode, useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import { StrictMode, useState, useMemo, useCallback, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App, PostMessageTransport, applyDocumentTheme } from '@modelcontextprotocol/ext-apps';
 import type { McpUiHostContext } from '@modelcontextprotocol/ext-apps';
@@ -16,6 +16,7 @@ import {
 } from 'chart.js';
 import { Line, Bar } from 'react-chartjs-2';
 import '../styles/globals.css';
+import sellwiseLogo from '../assets/sellwise_logo.webp';
 
 ChartJS.register(
   CategoryScale, LinearScale, PointElement, LineElement,
@@ -71,6 +72,13 @@ interface BusinessCaseResult {
 
 type WidgetStatus = 'idle' | 'loading' | 'success' | 'error';
 
+interface SliderRanges {
+  problems: Array<{ min: number; max: number; step: number }>;
+  effects: Array<{ min: number; max: number; step: number }>;
+  solutionOneTime: { min: number; max: number; step: number };
+  solutionAnnual: { min: number; max: number; step: number };
+}
+
 // ============================================================================
 // Client-Side Calculation (mirrors server)
 // ============================================================================
@@ -111,6 +119,18 @@ function formatPLNShort(value: number): string {
   return String(value);
 }
 
+/**
+ * Compute stable slider range from an initial value.
+ * Returns frozen min/max/step that won't change as the user drags.
+ */
+function sliderRange(initialValue: number): { min: number; max: number; step: number } {
+  if (initialValue <= 0) return { min: 0, max: 100_000, step: 1_000 };
+  const magnitude = Math.pow(10, Math.floor(Math.log10(initialValue)));
+  const niceMax = Math.ceil(initialValue * 3 / magnitude) * magnitude;
+  const step = Math.max(Math.round(niceMax / 200), Math.round(magnitude / 10), 100);
+  return { min: 0, max: niceMax, step };
+}
+
 // ============================================================================
 // Sub-Components
 // ============================================================================
@@ -121,6 +141,7 @@ function SliderInput({
   label: string; value: number; min: number; max: number; step: number;
   badge?: { text: string; color: string }; onChange: (v: number) => void;
 }) {
+  const clampedValue = Math.min(Math.max(value, min), max);
   return (
     <div className="space-y-1">
       <div className="flex justify-between items-center">
@@ -133,11 +154,11 @@ function SliderInput({
           )}
         </div>
         <span className="text-sm font-semibold text-gray-900 dark:text-gray-100 tabular-nums">
-          {formatPLN(value)}
+          {formatPLN(clampedValue)}
         </span>
       </div>
       <input
-        type="range" min={min} max={max} step={step} value={value}
+        type="range" min={min} max={max} step={step} value={clampedValue}
         onChange={(e) => onChange(Number(e.target.value))}
         className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer"
       />
@@ -184,14 +205,8 @@ function Widget() {
   const [hostContext, setHostContext] = useState<McpUiHostContext>();
   const [status, setStatus] = useState<WidgetStatus>('idle');
   const [errorMsg, setErrorMsg] = useState<string>('');
-  const [viewUUID, setViewUUID] = useState<string | null>(null);
   const [liveInputs, setLiveInputs] = useState<BusinessCaseInputs | null>(null);
-
-  const viewUUIDRef = useRef<string | null>(null);
-  const liveInputsRef = useRef<BusinessCaseInputs | null>(null);
-
-  useEffect(() => { viewUUIDRef.current = viewUUID; }, [viewUUID]);
-  useEffect(() => { liveInputsRef.current = liveInputs; }, [liveInputs]);
+  const [sliderRanges, setSliderRanges] = useState<SliderRanges | null>(null);
 
   const liveMetrics = useMemo(() => liveInputs ? calculateMetrics(liveInputs) : null, [liveInputs]);
 
@@ -234,22 +249,6 @@ function Widget() {
 
     appInstance.ontoolresult = (result) => {
       try {
-        const uuid = (result as any)?._meta?.viewUUID as string | undefined;
-        if (uuid) {
-          setViewUUID(uuid);
-          const saved = localStorage.getItem(`roi-bc-${uuid}`);
-          if (saved) {
-            try {
-              const parsed = JSON.parse(saved) as { inputs?: BusinessCaseInputs };
-              if (parsed.inputs) {
-                setLiveInputs(parsed.inputs);
-                setStatus('success');
-                return;
-              }
-            } catch { /* use server data */ }
-          }
-        }
-
         let data: BusinessCaseResult | null = null;
         if (result.structuredContent) {
           data = result.structuredContent as unknown as BusinessCaseResult;
@@ -260,6 +259,13 @@ function Widget() {
 
         if (data?.inputs) {
           setLiveInputs(data.inputs);
+          // Compute ranges ONCE from server data, store in state (never recomputed)
+          setSliderRanges({
+            problems: data.inputs.problems.map(p => sliderRange(p.annualCost)),
+            effects: data.inputs.effects.map(e => sliderRange(e.annualValue)),
+            solutionOneTime: sliderRange(data.inputs.solution.oneTimeCost),
+            solutionAnnual: sliderRange(data.inputs.solution.annualCost),
+          });
           setStatus('success');
         }
       } catch (e) {
@@ -283,13 +289,6 @@ function Widget() {
     };
 
     appInstance.onteardown = async () => {
-      const uuid = viewUUIDRef.current;
-      const inputs = liveInputsRef.current;
-      if (uuid && inputs) {
-        try {
-          localStorage.setItem(`roi-bc-${uuid}`, JSON.stringify({ inputs, timestamp: Date.now() }));
-        } catch { /* non-critical */ }
-      }
       return {};
     };
 
@@ -369,7 +368,7 @@ function Widget() {
     );
   }
 
-  if (!liveInputs || !liveMetrics) return null;
+  if (!liveInputs || !liveMetrics || !sliderRanges) return null;
 
   // --- Success State ---
 
@@ -434,15 +433,22 @@ function Widget() {
         <div className="max-w-4xl mx-auto p-4 space-y-4">
 
           {/* Header */}
-          <div className="flex items-center gap-3">
-            <h1 className="text-lg font-bold text-gray-900 dark:text-gray-100">
-              BUSINESS CASE &mdash; {liveInputs.clientName}
-            </h1>
-            {liveInputs.industry && (
-              <span className="text-xs px-2 py-0.5 rounded bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200">
-                {liveInputs.industry}
-              </span>
-            )}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <h1 className="text-lg font-bold text-gray-900 dark:text-gray-100">
+                BUSINESS CASE &mdash; {liveInputs.clientName}
+              </h1>
+              {liveInputs.industry && (
+                <span className="text-xs px-2 py-0.5 rounded bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200">
+                  {liveInputs.industry}
+                </span>
+              )}
+            </div>
+            <img
+              src={sellwiseLogo}
+              alt="SellWise"
+              className="h-8 w-auto object-contain opacity-80"
+            />
           </div>
 
           {/* Metric Cards */}
@@ -474,9 +480,9 @@ function Widget() {
                 key={i}
                 label={p.name}
                 value={p.annualCost}
-                min={0}
-                max={Math.max(p.annualCost * 3, 100000)}
-                step={Math.max(Math.round(p.annualCost / 100) * 5, 1000)}
+                min={sliderRanges.problems[i].min}
+                max={sliderRanges.problems[i].max}
+                step={sliderRanges.problems[i].step}
                 badge={p.source === 'client'
                   ? { text: '\u2713 dane klienta', color: 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300' }
                   : { text: '~ szacunek', color: 'bg-yellow-100 dark:bg-yellow-900 text-yellow-700 dark:text-yellow-300' }
@@ -497,17 +503,17 @@ function Widget() {
             <SliderInput
               label="Koszt jednorazowy"
               value={liveInputs.solution.oneTimeCost}
-              min={0}
-              max={Math.max(liveInputs.solution.oneTimeCost * 3, 100000)}
-              step={Math.max(Math.round(liveInputs.solution.oneTimeCost / 100) * 5, 1000)}
+              min={sliderRanges.solutionOneTime.min}
+              max={sliderRanges.solutionOneTime.max}
+              step={sliderRanges.solutionOneTime.step}
               onChange={(v) => updateSolution('oneTimeCost', v)}
             />
             <SliderInput
               label="Koszt roczny"
               value={liveInputs.solution.annualCost}
-              min={0}
-              max={Math.max(liveInputs.solution.annualCost * 3, 100000)}
-              step={Math.max(Math.round(liveInputs.solution.annualCost / 100) * 5, 1000)}
+              min={sliderRanges.solutionAnnual.min}
+              max={sliderRanges.solutionAnnual.max}
+              step={sliderRanges.solutionAnnual.step}
               onChange={(v) => updateSolution('annualCost', v)}
             />
           </div>
@@ -522,9 +528,9 @@ function Widget() {
                 key={i}
                 label={e.name}
                 value={e.annualValue}
-                min={0}
-                max={Math.max(e.annualValue * 3, 100000)}
-                step={Math.max(Math.round(e.annualValue / 100) * 5, 1000)}
+                min={sliderRanges.effects[i].min}
+                max={sliderRanges.effects[i].max}
+                step={sliderRanges.effects[i].step}
                 onChange={(v) => updateEffectValue(i, v)}
               />
             ))}
@@ -548,7 +554,7 @@ function Widget() {
                   plugins: {
                     legend: { position: 'top', labels: { color: textColor, boxWidth: 12, padding: 8, font: { size: 11 } } },
                     tooltip: {
-                      callbacks: { label: (ctx) => `${ctx.dataset.label}: ${formatPLN(ctx.parsed.y)}` },
+                      callbacks: { label: (ctx) => `${ctx.dataset.label}: ${formatPLN(ctx.parsed.y ?? 0)}` },
                     },
                   },
                   scales: {
@@ -575,7 +581,7 @@ function Widget() {
                   plugins: {
                     legend: { display: false },
                     tooltip: {
-                      callbacks: { label: (ctx) => formatPLN(ctx.parsed.x) },
+                      callbacks: { label: (ctx) => formatPLN(ctx.parsed.x ?? 0) },
                     },
                   },
                   scales: {
