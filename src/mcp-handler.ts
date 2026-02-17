@@ -358,13 +358,31 @@ function handleInitialize(request: { id: number | string }): Response {
 }
 
 function handleToolsList(request: { id: number | string }): Response {
+  const widgetResource = UI_RESOURCES.widget;
   return jsonRpcResponse(request.id, {
-    tools: [{
-      name: "build_business_case",
-      title: "Build Business Case",
-      description: "Builds an interactive ROI business case calculator from client problem costs, solution pricing, and expected effects. Returns structured financial data with real-time visualization including ROI percentage, payback period, cost comparison chart, and formatted business case text.",
-      inputSchema: TOOL_JSON_SCHEMAS.build_business_case,
-    }],
+    tools: [
+      {
+        name: "build_business_case",
+        title: "Build Business Case",
+        description: "Builds an interactive ROI business case calculator from client problem costs, solution pricing, and expected effects. Returns structured financial data with real-time visualization including ROI percentage, payback period, cost comparison chart, and formatted business case text.",
+        inputSchema: TOOL_JSON_SCHEMAS.build_business_case,
+        _meta: {
+          ui: { resourceUri: widgetResource.uri }
+        },
+      },
+      {
+        name: "recalculate_roi",
+        title: "Recalculate ROI",
+        description: "Recalculates ROI metrics when user adjusts sliders in the widget",
+        inputSchema: TOOL_JSON_SCHEMAS.build_business_case,
+        _meta: {
+          ui: {
+            resourceUri: widgetResource.uri,
+            visibility: ["app"],
+          }
+        },
+      },
+    ],
   });
 }
 
