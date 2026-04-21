@@ -27,8 +27,8 @@
     "serve:stdio": "wrangler dev --experimental-enable-local-persistence"
   },
   "dependencies": {
-    "@modelcontextprotocol/ext-apps": "^1.0.0",
-    "@modelcontextprotocol/sdk": "^1.26.0",
+    "@modelcontextprotocol/ext-apps": "^1.6.0",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "chart.js": "^4.5.1",
     "jose": "^6.1.0",
     "react": "^18.3.1",
