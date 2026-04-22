@@ -1,5 +1,6 @@
 import type { Env } from "./types";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { LATEST_PROTOCOL_VERSION } from "@modelcontextprotocol/sdk/types.js";
 import * as z from "zod/v4";
 import { BuildBusinessCaseInput, type BuildBusinessCaseParams } from "./schemas/inputs";
 import { calculateBusinessCase } from "./calculations";
@@ -328,7 +329,7 @@ export async function handleMcpRequest(
 
 function handleInitialize(request: { id: number | string }): Response {
   return jsonRpcResponse(request.id, {
-    protocolVersion: "2024-11-05",
+    protocolVersion: LATEST_PROTOCOL_VERSION,
     capabilities: { tools: {}, prompts: { listChanged: true }, resources: { listChanged: true } },
     serverInfo: { name: SERVER_CONFIG.NAME, version: SERVER_CONFIG.VERSION },
   });
