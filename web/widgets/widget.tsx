@@ -17,6 +17,7 @@ import {
 import { Line, Bar } from 'react-chartjs-2';
 import '../styles/globals.css';
 import sellwiseLogo from '../assets/sellwise_logo.webp';
+import { WtyczkiBadge } from '../components/wtyczki-badge';
 
 ChartJS.register(
   CategoryScale, LinearScale, PointElement, LineElement,
@@ -542,11 +543,14 @@ User adjusted sliders. Current ROI is ${liveMetrics.roiPercent.toFixed(0)}%, pay
                 </span>
               )}
             </div>
-            <img
-              src={sellwiseLogo}
-              alt="SellWise"
-              className="h-8 w-auto object-contain opacity-80"
-            />
+            <div className="flex items-center gap-3">
+              <WtyczkiBadge />
+              <img
+                src={sellwiseLogo}
+                alt="SellWise"
+                className="h-8 w-auto object-contain opacity-80"
+              />
+            </div>
           </div>
 
           {/* Metric Cards */}
