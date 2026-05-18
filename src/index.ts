@@ -2,11 +2,8 @@
  * ROI Business Case MCP Server — Cloudflare canonical pattern (createMcpHandler)
  *
  * Architecture:
- * - Custom dual-auth pre-handler (JWT via AuthKit + API key via D1)
- *   — preserved from legacy because we support BOTH OAuth-capable clients
- *   AND non-OAuth clients (AnythingLLM, Cursor) via wtyk_ API keys.
- *   Intentional divergence from cf-mcp canonical (OAuthProvider-only),
- *   documented in .claude/rules/OVERRIDES-cf-mcp.md.
+ * - JWT pre-handler verifies WorkOS AuthKit tokens via JWKS, then looks up the
+ *   user in shared D1 (`mcp-oauth`) by `workos_user_id`.
  * - createMcpHandler from agents/mcp wraps a fresh McpServer per request,
  *   handles Streamable HTTP transport, GHSA-345p-7cg4-v4c7 safe.
  * - Auth context (userId, email) flows to tool handlers via authContext option
@@ -14,7 +11,6 @@
  */
 
 import type { Env } from "./types";
-import { validateApiKey } from "./auth/apiKeys";
 import { verifyJwt } from "./auth/jwt-verify";
 import { getUserByWorkosId } from "./auth/auth-utils";
 import { handleProtectedResource, handleAuthorizationServer, buildWWWAuthenticateHeader } from "./well-known";
@@ -65,23 +61,13 @@ async function handleAuthenticatedMcp(
     return unauthorizedResponse(baseUrl);
   }
 
-  let userId: string;
-  let email: string;
+  const jwtResult = await verifyJwt(token, env.AUTHKIT_DOMAIN);
+  if (!jwtResult) return unauthorizedResponse(baseUrl);
 
-  if (token.startsWith('wtyk_')) {
-    const result = await validateApiKey(token, env);
-    if (!result) return unauthorizedResponse(baseUrl);
-    userId = result.userId;
-    email = result.email ?? '';
-  } else {
-    const jwtResult = await verifyJwt(token, env.AUTHKIT_DOMAIN);
-    if (!jwtResult) return unauthorizedResponse(baseUrl);
-
-    const dbUser = await getUserByWorkosId(env.DB, jwtResult.workosUserId);
-    if (!dbUser) return unauthorizedResponse(baseUrl);
-    userId = dbUser.user_id;
-    email = dbUser.email ?? '';
-  }
+  const dbUser = await getUserByWorkosId(env.DB, jwtResult.workosUserId);
+  if (!dbUser) return unauthorizedResponse(baseUrl);
+  const userId = dbUser.user_id;
+  const email = dbUser.email ?? '';
 
   const server = createServer(env);
   return createMcpHandler(server, {
